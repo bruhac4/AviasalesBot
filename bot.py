@@ -16,8 +16,8 @@ ALLOWED_ROLE_IDS = [1323420440919670908, 1330492203969282129]  # Роли для
 FLIGHT_CHANNEL_ID = 1385932180005458011  # Канал для рейсов
 
 ROLE_CONFIG = {
-    "pilot": {"label": "Пилот", "emoji": "✈️", "limit": 1},
-    "copilot": {"label": "Ко-пилот", "emoji": "✈️", "limit": 1},
+    "pilot": {"label": "Пилот", "emoji": "✈", "limit": 1},
+    "copilot": {"label": "Ко-пилот", "emoji": "✈", "limit": 1},
     "dispatcher": {"label": "Диспетчер", "emoji": "🎧", "limit": 2},
     "ground": {"label": "Наземная служба", "emoji": "🚨", "limit": 5},
     "steward": {"label": "Стюард", "emoji": "🚻", "limit": 3},
@@ -41,7 +41,12 @@ class RoleView(discord.ui.View):
     class RoleButton(discord.ui.Button):
         def __init__(self, role_key):
             info = ROLE_CONFIG[role_key]
-            super().__init__(label=info["label"], emoji=info["emoji"], style=discord.ButtonStyle.primary)
+            super().__init__(
+                label=info["label"],
+                emoji=info["emoji"],
+                style=discord.ButtonStyle.primary,
+                custom_id=f"role_{role_key}"
+            )
             self.role_key = role_key
 
         async def callback(self, interaction: discord.Interaction):
@@ -49,7 +54,6 @@ class RoleView(discord.ui.View):
             if not flight:
                 return await interaction.response.send_message("Рейс не найден.", ephemeral=True)
             
-            # Проверка и обновление роли
             if interaction.user.id in flight["users"]:
                 if flight["users"][interaction.user.id] == self.role_key:
                     return await interaction.response.send_message("Вы уже имеете эту роль.", ephemeral=True)
@@ -57,12 +61,10 @@ class RoleView(discord.ui.View):
             if ROLE_CONFIG[self.role_key]["limit"] and len(flight["roles"][self.role_key]) >= ROLE_CONFIG[self.role_key]["limit"]:
                 return await interaction.response.send_message("Лимит на эту роль достигнут.", ephemeral=True)
 
-            # Удаление предыдущей роли
             if interaction.user.id in flight["users"]:
                 old_role = flight["users"][interaction.user.id]
                 flight["roles"][old_role].remove(interaction.user.mention)
             
-            # Добавление новой роли
             flight["roles"][self.role_key].append(interaction.user.mention)
             flight["users"][interaction.user.id] = self.role_key
             
@@ -71,7 +73,12 @@ class RoleView(discord.ui.View):
 
     class CancelButton(discord.ui.Button):
         def __init__(self):
-            super().__init__(label="Отменить роль", emoji="⛔️", style=discord.ButtonStyle.danger)
+            super().__init__(
+                label="Отменить роль",
+                emoji="❌",
+                style=discord.ButtonStyle.danger,
+                custom_id="cancel_role"
+            )
 
         async def callback(self, interaction: discord.Interaction):
             flight = next((f for f in active_flights.values() if interaction.user.id in f["users"]), None)
@@ -116,21 +123,17 @@ async def create_flight(interaction: discord.Interaction,
                       time: str, 
                       gate: str):
     try:
-        # Проверка прав
         if not any(role.id in ALLOWED_ROLE_IDS for role in interaction.user.roles):
             return await interaction.response.send_message("❌ У вас нет прав для создания рейсов!", ephemeral=True)
 
-        # Немедленный ответ
-        await interaction.response.defer(ephemeral=True, thinking=True)
+        await interaction.response.defer(ephemeral=True)
 
-        # Генерация ID рейса
         flight_id = random.randint(1000, 9999)
         channel = bot.get_channel(FLIGHT_CHANNEL_ID)
         
         if not channel:
             return await interaction.followup.send("❌ Канал для рейсов не найден!", ephemeral=True)
 
-        # Создаем данные рейса
         flight_data = {
             "id": flight_id,
             "from": departure,
@@ -143,14 +146,13 @@ async def create_flight(interaction: discord.Interaction,
             "users": {}
         }
 
-        # Отправляем сообщение
+        view = RoleView(flight_id)
         msg = await channel.send(
             content=f"✈️ @everyone\n{interaction.user.mention} создал новый рейс!",
             embed=generate_embed(flight_data),
-            view=RoleView(flight_id)
+            view=view
         )
 
-        # Сохраняем ссылку на сообщение
         flight_data["message"] = msg
         active_flights[msg.id] = flight_data
 
