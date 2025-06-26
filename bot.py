@@ -240,8 +240,8 @@ async def create_flight(interaction: discord.Interaction,
         print(f"[❌] Ошибка: {e}")
         await interaction.followup.send(f"[❌] Ошибка при создании рейса: {str(e)}", ephemeral=True)
 
-@bot.tree.command(name="активные", description="Показать активные рейсы")
-async def show_active(interaction: discord.Interaction):
+@bot.tree.command(name="активные_рейсы", description="Показать активные рейсы")
+async def show_active_flights(interaction: discord.Interaction):
     try:
         if not active_flights:
             return await interaction.response.send_message("[ℹ️] Сейчас нет активных рейсов.", ephemeral=True)
@@ -265,7 +265,7 @@ async def on_ready():
     print(f"[✅] Бот {bot.user} готов к работе!")
     try:
         synced = await bot.tree.sync()
-        print(f"[🔄] Синхронизировано {len(synced)} команд")
+        print(f"[🔄] Синхронизировано {len(synced)} команд: {[cmd.name for cmd in synced]}")
     except Exception as e:
         print(f"[❌] Ошибка синхронизации: {e}")
 
