@@ -20,7 +20,7 @@ ROLE_CONFIG = {
     "copilot": {"label": "Ко-пилот", "emoji": "👨‍✈️", "limit": 1},
     "dispatcher": {"label": "Диспетчер", "emoji": "🎧", "limit": 2},
     "steward": {"label": "Бортпроводник", "emoji": "👨‍💼", "limit": 3},
-    "ground": {"label": "Наземная служба", "emoji": "🚨", "limit": 5},  # Измененный эмодзи
+    "ground": {"label": "Наземная служба", "emoji": "🚨", "limit": 5},
     "passenger": {"label": "Пассажир", "emoji": "🧳", "limit": None},
 }
 
@@ -92,7 +92,6 @@ class RoleView(discord.ui.View):
             await interaction.response.send_message("[✅] Вы больше не участвуете в рейсе.", ephemeral=True)
 
 def generate_embed(flight):
-    # Создаем информацию о рейсе
     flight_info = (
         f"**Модель самолёта:** {flight['aircraft']}\n"
         f"**Аэропорт вылета:** {flight['from']}\n"
@@ -103,7 +102,6 @@ def generate_embed(flight):
         f"**Гейт:** {flight['gate']}\n\n"
     )
     
-    # Создаем информацию о ролях
     roles_info = []
     for key, info in ROLE_CONFIG.items():
         members = flight["roles"][key]
@@ -115,7 +113,6 @@ def generate_embed(flight):
             roles_info.append("- Не назначено")
         roles_info.append("")  # Пустая строка между ролями
     
-    # Объединяем все части
     description = flight_info + "\n".join(roles_info)
     
     embed = discord.Embed(
@@ -124,6 +121,65 @@ def generate_embed(flight):
         color=0x3498db
     )
     return embed
+
+class FlightButton(discord.ui.Button):
+    def __init__(self, flight_id):
+        super().__init__(
+            label=f"N.{flight_id}",
+            style=discord.ButtonStyle.green,
+            custom_id=f"show_{flight_id}"
+        )
+        self.flight_id = flight_id
+
+    async def callback(self, interaction: discord.Interaction):
+        flight = next((f for f in active_flights.values() if f["id"] == self.flight_id), None)
+        if not flight:
+            return await interaction.response.send_message("[❌] Рейс не найден.", ephemeral=True)
+        
+        view = FlightControlView(flight["message"].id)
+        await interaction.response.send_message(
+            embed=generate_embed(flight),
+            view=view,
+            ephemeral=True
+        )
+
+class FlightControlView(discord.ui.View):
+    def __init__(self, msg_id):
+        super().__init__(timeout=None)
+        self.msg_id = msg_id
+        
+        close_btn = discord.ui.Button(
+            label="Закрыть регистрацию",
+            style=discord.ButtonStyle.primary,
+            emoji="🔒",
+            custom_id=f"close_{msg_id}"
+        )
+        delete_btn = discord.ui.Button(
+            label="Удалить рейс",
+            style=discord.ButtonStyle.primary,
+            emoji="🗑️",
+            custom_id=f"delete_{msg_id}"
+        )
+        
+        close_btn.callback = self.close_callback
+        delete_btn.callback = self.delete_callback
+        
+        self.add_item(close_btn)
+        self.add_item(delete_btn)
+
+    async def close_callback(self, interaction: discord.Interaction):
+        flight = active_flights.get(self.msg_id)
+        if flight:
+            await interaction.response.defer(ephemeral=True)
+            await flight["message"].edit(view=None)
+            await interaction.followup.send("[✅] Регистрация на рейс закрыта!", ephemeral=True)
+
+    async def delete_callback(self, interaction: discord.Interaction):
+        flight = active_flights.pop(self.msg_id, None)
+        if flight:
+            await interaction.response.defer(ephemeral=True)
+            await flight["message"].delete()
+            await interaction.followup.send("[✅] Рейс успешно удалён!", ephemeral=True)
 
 @bot.tree.command(name="рейс", description="Создать новый рейс")
 @app_commands.describe(
@@ -183,6 +239,26 @@ async def create_flight(interaction: discord.Interaction,
     except Exception as e:
         print(f"[❌] Ошибка: {e}")
         await interaction.followup.send(f"[❌] Ошибка при создании рейса: {str(e)}", ephemeral=True)
+
+@bot.tree.command(name="активные", description="Показать активные рейсы")
+async def show_active(interaction: discord.Interaction):
+    try:
+        if not active_flights:
+            return await interaction.response.send_message("[ℹ️] Сейчас нет активных рейсов.", ephemeral=True)
+
+        view = discord.ui.View(timeout=None)
+        for flight in active_flights.values():
+            view.add_item(FlightButton(flight["id"]))
+
+        await interaction.response.send_message(
+            "[📋] Выберите рейс для управления:",
+            view=view,
+            ephemeral=True
+        )
+
+    except Exception as e:
+        print(f"[❌] Ошибка: {e}")
+        await interaction.response.send_message(f"[❌] Ошибка: {str(e)}", ephemeral=True)
 
 @bot.event
 async def on_ready():
